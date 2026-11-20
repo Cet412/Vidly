@@ -1,19 +1,23 @@
 package com.vidly.app
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,49 +29,89 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.tooling.preview.Preview
-import com.vidly.app.data.api.ApiClient
 import com.vidly.app.data.repository.DownloadRepository
+import com.vidly.app.data.repository.DownloadResult
 import com.vidly.app.ui.theme.VidlyTheme
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private val PREFS_NAME = "vidly_shared_url"
-    private val downloadRepository = DownloadRepository()
-    private val appContext = this
+
+    private var pendingUrl: String? = null
+
+    private val requestNotificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            Log.d(TAG, "izin notifikasi: $granted")
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Cek SharedPreferences untuk URL yang dibagikan dari ShareReceiver
-        val sharedPrefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        val shareUrlFromPrefs = sharedPrefs.getString("url", null)
-
-        // Handle share intent jika aplikasi dibuka dari share menu
-        val shareUrl: String?
-        if (intent?.action == "android.intent.action.SEND" && intent?.hasExtra(Intent.EXTRA_TEXT)!!) {
-            shareUrl = intent.getStringExtra(Intent.EXTRA_TEXT)
-            savedInstanceState?.putString("share_url", shareUrl)
-        } else {
-            shareUrl = savedInstanceState?.getString("share_url")
-        }
-
-        val finalUrl = shareUrl ?: shareUrlFromPrefs
+        askNotificationPermission()
+        pendingUrl = resolveUrl(savedInstanceState ?: Bundle())
 
         setContent {
             VidlyTheme {
-                VidlyHome(shareUrl = finalUrl, downloadRepository = downloadRepository, appContext = appContext)
+                VidlyHome(
+                    shareUrl = pendingUrl,
+                    downloadRepository = DownloadRepository(),
+                    appContext = applicationContext
+                )
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
+    /** URL dari intent share, lalu dari SharedPreferences yang diisi ShareReceiver. */
+    private fun resolveUrl(savedInstanceState: Bundle): String? {
+        val fromIntent = intent?.takeIf { it.action == Intent.ACTION_SEND }
+            ?.getStringExtra(Intent.EXTRA_TEXT)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+
+        val fromPrefs = getSharedPreferences(ShareReceiverPrefs, MODE_PRIVATE)
+            .let { prefs ->
+                prefs.getString("url", null)?.also {
+                    prefs.edit().remove("url").apply() // konsumsi sekali pakai
+                }
+            }
+
+        val extras = intent?.getStringExtra(EXTRA_URL)?.trim()?.takeIf { it.isNotEmpty() }
+
+        val resolved = fromIntent ?: extras ?: fromPrefs ?: savedInstanceState.getString(EXTRA_URL)
+        Log.d(TAG, "URL terpilih: ${resolved?.take(80)}")
+        return resolved
+    }
+
+    private fun askNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val granted = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        pendingUrl?.let { outState.putString(EXTRA_URL, it) }
+    }
+
+    companion object {
+        const val TAG = "VidlyMain"
+        const val EXTRA_URL = "share_url"
+        const val ShareReceiverPrefs = "vidly_shared_url"
+    }
 }
 
-/**
- * Menerima URL dari share intent sebagai parameter
- */
 @Composable
-fun VidlyHome(shareUrl: String? = null, downloadRepository: DownloadRepository, appContext: android.content.Context) {
+fun VidlyHome(
+    shareUrl: String? = null,
+    downloadRepository: DownloadRepository,
+    appContext: android.content.Context
+) {
     val scope = rememberCoroutineScope()
     var url by rememberSaveable { mutableStateOf(shareUrl ?: "") }
     var status by rememberSaveable { mutableStateOf("Siap") }
@@ -91,48 +135,29 @@ fun VidlyHome(shareUrl: String? = null, downloadRepository: DownloadRepository, 
 
             Button(
                 onClick = {
+                    if (url.isBlank()) {
+                        status = "URL kosong"
+                        return@Button
+                    }
                     scope.launch {
                         loading = true
-                        status = "Memeriksa backend..."
-                        try {
-                            val response = ApiClient.api.health()
-                            if (response.isSuccessful && response.body()?.status == "ok") {
-                                status = "Backend staging terhubung - Memulai unduhan..."
-                                // Jalankan download ke MediaStore
-                                val savedUri = downloadRepository.downloadVideo(appContext, url)
-                                if (savedUri != null) {
-                                    status = "Unduhan selesai! Disimpan di:\n${savedUri.toString()}"
-                                } else {
-                                    status = "Unduhan gagal - Cek log"
-                                }
-                            } else {
-                                status = "Backend mengembalikan status ${response.code()}"
-                            }
-                        } catch (e: Exception) {
-                            status = "Backend tidak dapat dihubungi"
-                        } finally {
-                            loading = false
+                        status = "Mengunduh..."
+                        when (val result = downloadRepository.downloadVideo(appContext, url.trim())) {
+                            is DownloadResult.Success ->
+                                status = "Selesai (${result.bytes / 1024} KB)\nDisimpan di Download/Vidly\n${result.uri}"
+                            is DownloadResult.Failure ->
+                                status = "Gagal: ${result.reason}"
                         }
+                        loading = false
                     }
                 },
                 enabled = !loading,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                if (loading) {
-                    CircularProgressIndicator()
-                } else {
-                    Text("Cek Backend")
-                }
+                if (loading) CircularProgressIndicator() else Text("Unduh")
             }
 
             Text(text = status)
         }
     }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun VidlyHomePreview() {
-    // Preview tidak memerlukan context real
-    // Gunakan context dari preview environment
 }

@@ -4,26 +4,36 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import android.widget.Toast
-import android.content.SharedPreferences
+import com.vidly.app.MainActivity
 
 class ShareReceiver : BroadcastReceiver() {
-    private val TAG = "ShareReceiver"
-    private val PREFS_NAME = "vidly_shared_url"
 
     override fun onReceive(context: Context, intent: Intent) {
-        val url = intent.getStringExtra(Intent.EXTRA_TEXT)
-        if (url != null && !url.isEmpty()) {
-            Log.d(TAG, "URL diterima via share intent: $url")
+        val url = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()
+        Log.d(TAG, "share intent diterima, url=${url?.take(80)}")
 
-            // Simpan URL ke shared preferences agar MainActivity bisa baca
-            val sharedPref: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            sharedPref.edit().putString("url", url).apply()
-
-            // Tampilkan toast
-            Toast.makeText(context, "Link video diterima", Toast.LENGTH_LONG).show()
-        } else {
-            Log.d(TAG, "Share intent terekstur tanpa URL")
+        if (url.isNullOrEmpty()) {
+            Log.w(TAG, "EXTRA_TEXT kosong, share diabaikan")
+            return
         }
+
+        // Simpan untuk dibaca MainActivity saat onCreate (dikonsumsi sekali pakai).
+        context.getSharedPreferences(MainActivity.ShareReceiverPrefs, Context.MODE_PRIVATE)
+            .edit()
+            .putString("url", url)
+            .commit()
+
+        // Buka app supaya user melihat hasilnya, bukan hanya toast di latar.
+        context.startActivity(
+            Intent(context, MainActivity::class.java).apply {
+                action = Intent.ACTION_SEND
+                putExtra(Intent.EXTRA_TEXT, url)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+        )
+    }
+
+    companion object {
+        private const val TAG = "ShareReceiver"
     }
 }

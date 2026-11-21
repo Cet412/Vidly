@@ -10,6 +10,7 @@ import android.util.Log
 import com.vidly.app.BuildConfig
 import com.vidly.app.data.api.ApiClient
 import com.vidly.app.data.local.HistoryEntity
+import com.vidly.app.data.manager.DownloadManager
 import com.vidly.app.data.repository.HistoryRepository
 import com.vidly.app.notification.NotificationHelper
 import com.vidly.app.util.NetworkUtils
@@ -34,9 +35,12 @@ class DownloadRepository {
     suspend fun downloadVideo(context: Context, url: String): DownloadResult = withContext(Dispatchers.IO) {
         Log.d(TAG, "mulai download url=$url")
         val notif = NotificationHelper(context)
+        val downloadManager = DownloadManager.getInstance()
+        val downloadId = downloadManager.addDownload(url, url)
 
         if (!NetworkUtils.isOnline(context)) {
             notif.showErrorNotification("Tidak ada koneksi", "Periksa koneksi internet Anda.")
+            downloadManager.markFailed(downloadId, "Offline")
             return@withContext DownloadResult.Failure(DownloadError.Network("offline"))
         }
 
@@ -51,7 +55,7 @@ class DownloadRepository {
             Log.d(TAG, "percobaan $attempt/$maxAttempts")
 
             val result = try {
-                fetch(context, url, notif)
+                fetch(context, url, notif, downloadId, downloadManager)
             } catch (e: UnknownHostException) {
                 Log.e(TAG, "host tidak ditemukan", e)
                 DownloadResult.Failure(DownloadError.Network(e.message ?: "unknown host"))
@@ -69,6 +73,7 @@ class DownloadRepository {
             when (result) {
                 is DownloadResult.Success -> {
                     notif.cancelNotification()
+                    downloadManager.markCompleted(downloadId)
                     return@withContext result
                 }
                 is DownloadResult.Failure -> {
@@ -98,10 +103,11 @@ class DownloadRepository {
         // Semua percobaan gagal
         notif.showErrorNotification("Unduhan gagal", lastError.userMessage)
         notif.cancelNotification()
-        DownloadResult.Failure(lastError)
+        downloadManager.markFailed(downloadId, lastError.userMessage)
+        return@withContext DownloadResult.Failure(lastError)
     }
 
-    private suspend fun fetch(context: Context, url: String, notif: NotificationHelper): DownloadResult {
+    private suspend fun fetch(context: Context, url: String, notif: NotificationHelper, downloadId: String, downloadManager: DownloadManager): DownloadResult {
         val endpoint = "${BuildConfig.API_BASE_URL.trimEnd('/')}/api/v1/download"
         val payload = JSONObject().put("url", url).toString()
         val request = Request.Builder()
@@ -151,6 +157,7 @@ class DownloadRepository {
                         totalWritten += bytesRead
                         val progressPercent = (totalWritten * 100 / maxOf(contentLength, 1L)).toInt()
                         notif.showProgressNotification("Mengunduh: ${displayName.take(30)}", progressPercent)
+                        downloadManager.updateProgress(downloadId, totalWritten, contentLength)
                     }
                     totalWritten
                 }

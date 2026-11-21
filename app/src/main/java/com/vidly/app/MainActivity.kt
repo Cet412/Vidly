@@ -21,6 +21,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.Alignment
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.rememberCoroutineScope
+import com.vidly.app.data.manager.DownloadManager
+import com.vidly.app.ui.download.DownloadQueueSheet
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -127,6 +134,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VidlyHome(
     shareUrl: String? = null,
@@ -139,6 +147,9 @@ fun VidlyHome(
     var status by rememberSaveable { mutableStateOf("Siap") }
     var loading by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
+    var showDownloadQueue by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState()
+    val downloadManager = remember { DownloadManager.getInstance() }
 
     if (showHistory) {
         HistoryScreen(
@@ -180,6 +191,7 @@ fun VidlyHome(
                         status = "URL kosong"
                         return@Button
                     }
+                    showDownloadQueue = true
                     scope.launch {
                         loading = true
                         status = "Mengunduh..."
@@ -221,6 +233,18 @@ fun VidlyHome(
             }
 
             Text(text = status)
+        }
+    }
+
+    if (showDownloadQueue) {
+        ModalBottomSheet(
+            onDismissRequest = { showDownloadQueue = false },
+            sheetState = sheetState
+        ) {
+            DownloadQueueSheet(
+                downloadManager = downloadManager,
+                onDismiss = { showDownloadQueue = false }
+            )
         }
     }
 }

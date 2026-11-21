@@ -144,9 +144,9 @@ fun VidlyHome(
                         status = "Mengunduh..."
                         when (val result = downloadRepository.downloadVideo(appContext, url.trim())) {
                             is DownloadResult.Success ->
-                                status = "Selesai (${result.bytes / 1024} KB)\nDisimpan di Download/Vidly\n${result.uri}"
+                                status = "Selesai (${result.bytes / 1024} KB)\nDisimpan di Movies/Pictures/Vidly\n${result.uri}"
                             is DownloadResult.Failure ->
-                                status = "Gagal: ${result.reason}"
+                                status = "Gagal: ${result.error.userMessage}"
                         }
                         loading = false
                     }
@@ -155,6 +155,28 @@ fun VidlyHome(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (loading) CircularProgressIndicator() else Text("Unduh")
+            }
+
+            if (status.startsWith("Gagal")) {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            loading = true
+                            status = "Mengunduh..."
+                            when (val result = downloadRepository.downloadVideo(appContext, url.trim())) {
+                                is DownloadResult.Success ->
+                                    status = "Selesai (${result.bytes / 1024} KB)\nDisimpan di Movies/Pictures/Vidly\n${result.uri}"
+                                is DownloadResult.Failure ->
+                                    status = "Gagal: ${result.error.userMessage}"
+                            }
+                            loading = false
+                        }
+                    },
+                    enabled = !loading && url.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Coba Lagi")
+                }
             }
 
             Text(text = status)

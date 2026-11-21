@@ -28,7 +28,7 @@ class DownloadService : Service() {
             val result = repo.downloadVideo(applicationContext, url)
             when (result) {
                 is DownloadResult.Success -> Log.d(TAG, "download sukses: ${result.bytes} byte")
-                is DownloadResult.Failure -> Log.e(TAG, "download gagal: ${result.reason}")
+                is DownloadResult.Failure -> Log.e(TAG, "download gagal: ${result.error.userMessage}")
             }
             stopSelf()
         }

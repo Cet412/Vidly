@@ -10,16 +10,21 @@ import android.util.Log
 import com.vidly.app.BuildConfig
 import com.vidly.app.data.api.ApiClient
 import com.vidly.app.notification.NotificationHelper
+import com.vidly.app.util.NetworkUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 
 sealed interface DownloadResult {
     data class Success(val uri: Uri, val bytes: Long) : DownloadResult
-    data class Failure(val reason: String) : DownloadResult
+    data class Failure(val error: DownloadError) : DownloadResult
 }
 
 class DownloadRepository {
@@ -27,14 +32,71 @@ class DownloadRepository {
     suspend fun downloadVideo(context: Context, url: String): DownloadResult = withContext(Dispatchers.IO) {
         Log.d(TAG, "mulai download url=$url")
         val notif = NotificationHelper(context)
-        try {
-            notif.showProgressNotification("Mengunduh...", 0)
-            fetch(context, url, notif)
-        } catch (e: Exception) {
-            Log.e(TAG, "gagal download", e)
-            notif.showErrorNotification("Unduhan gagal", e.message.orEmpty().take(100))
-            DownloadResult.Failure("${e.javaClass.simpleName}: ${e.message}")
+
+        if (!NetworkUtils.isOnline(context)) {
+            notif.showErrorNotification("Tidak ada koneksi", "Periksa koneksi internet Anda.")
+            return@withContext DownloadResult.Failure(DownloadError.Network("offline"))
         }
+
+        notif.showProgressNotification("Mengunduh...", 0)
+
+        var lastError: DownloadError = DownloadError.Unknown("unknown")
+        var attempt = 0
+        val maxAttempts = 3
+
+        while (attempt < maxAttempts) {
+            attempt++
+            Log.d(TAG, "percobaan $attempt/$maxAttempts")
+
+            val result = try {
+                fetch(context, url, notif)
+            } catch (e: UnknownHostException) {
+                Log.e(TAG, "host tidak ditemukan", e)
+                DownloadResult.Failure(DownloadError.Network(e.message ?: "unknown host"))
+            } catch (e: SocketTimeoutException) {
+                Log.e(TAG, "timeout", e)
+                DownloadResult.Failure(DownloadError.Timeout(e.message ?: "timeout"))
+            } catch (e: IOException) {
+                Log.e(TAG, "io error", e)
+                DownloadResult.Failure(DownloadError.Network(e.message ?: "io error"))
+            } catch (e: Exception) {
+                Log.e(TAG, "unexpected error", e)
+                DownloadResult.Failure(DownloadError.Unknown(e.message ?: "unknown"))
+            }
+
+            when (result) {
+                is DownloadResult.Success -> {
+                    notif.cancelNotification()
+                    return@withContext result
+                }
+                is DownloadResult.Failure -> {
+                    lastError = result.error
+                    val shouldRetry = when (result.error) {
+                        is DownloadError.Network -> true
+                        is DownloadError.Timeout -> true
+                        is DownloadError.Backend -> result.error.code in 500..599
+                        else -> false
+                    }
+
+                    if (shouldRetry && attempt < maxAttempts) {
+                        val delayMs = (1000L * (1 shl (attempt - 1))) // 1s, 2s, 4s
+                        Log.d(TAG, "retry dalam ${delayMs}ms")
+                        delay(delayMs)
+                        continue
+                    }
+
+                    // Tidak retry — tampilkan error
+                    notif.showErrorNotification("Unduhan gagal", result.error.userMessage)
+                    notif.cancelNotification()
+                    return@withContext result
+                }
+            }
+        }
+
+        // Semua percobaan gagal
+        notif.showErrorNotification("Unduhan gagal", lastError.userMessage)
+        notif.cancelNotification()
+        DownloadResult.Failure(lastError)
     }
 
     private fun fetch(context: Context, url: String, notif: NotificationHelper): DownloadResult {
@@ -49,18 +111,22 @@ class DownloadRepository {
         ApiClient.httpClient.newCall(request).execute().use { response ->
             Log.d(TAG, "response code=${response.code} contentType=${response.header("Content-Type")} length=${response.header("Content-Length")}")
 
+            if (response.code == 429) {
+                val retryAfter = response.header("Retry-After")?.toIntOrNull() ?: 3600
+                Log.w(TAG, "rate limited, retry after $retryAfter s")
+                return DownloadResult.Failure(DownloadError.RateLimited(retryAfter))
+            }
+
             if (!response.isSuccessful) {
                 val body = response.body?.string()?.take(300).orEmpty()
                 Log.w(TAG, "backend menolak: ${response.code} $body")
-                notif.showErrorNotification("Backend error", "${response.code}: $body")
-                return DownloadResult.Failure("Backend ${response.code}: $body")
+                return DownloadResult.Failure(DownloadError.Backend(response.code, body))
             }
 
             val body = response.body
             if (body == null) {
                 Log.e(TAG, "response body null")
-                notif.showErrorNotification("Error", "Response kosong")
-                return DownloadResult.Failure("Response kosong dari backend")
+                return DownloadResult.Failure(DownloadError.Unknown("Response kosong"))
             }
 
             val displayName = fileName(response.header("Content-Disposition"))
@@ -70,10 +136,7 @@ class DownloadRepository {
             Log.d(TAG, "nama file=$displayName size=$contentLength mime=$mimeType isImage=$isImage")
 
             val uri = createMediaStoreEntry(context, displayName, mimeType, isImage)
-                ?: run {
-                    notif.showErrorNotification("Error", "Gagal membuat entri MediaStore")
-                    return DownloadResult.Failure("Gagal membuat entri MediaStore")
-                }
+                ?: return DownloadResult.Failure(DownloadError.Storage("Gagal membuat entri MediaStore"))
 
             val written = runCatching {
                 context.contentResolver.openOutputStream(uri)!!.use { out ->
@@ -92,8 +155,7 @@ class DownloadRepository {
             }.getOrElse { e ->
                 Log.e(TAG, "gagal menulis ke MediaStore, hapus entri", e)
                 context.contentResolver.delete(uri, null, null)
-                notif.showErrorNotification("Error", "Gagal menyimpan: ${e.message}")
-                return DownloadResult.Failure("Gagal menyimpan file: ${e.message}")
+                return DownloadResult.Failure(DownloadError.Storage(e.message ?: "storage error"))
             }
 
             context.contentResolver.update(
@@ -104,7 +166,6 @@ class DownloadRepository {
             )
             Log.d(TAG, "selesai: $written byte -> $uri")
             notif.showCompletionNotification("Unduhan selesai!", displayName)
-            notif.cancelNotification()
             return DownloadResult.Success(uri, written)
         }
     }
@@ -130,7 +191,7 @@ class DownloadRepository {
         return uri
     }
 
-    private fun fileName(contentDisposition: String?): String {
+    internal fun fileName(contentDisposition: String?): String {
         val fromHeader = contentDisposition
             ?.substringAfter("filename=\"", "")
             ?.substringBefore("\"")
@@ -156,4 +217,3 @@ class DownloadRepository {
         private const val TAG = "VidlyDownload"
     }
 }
-

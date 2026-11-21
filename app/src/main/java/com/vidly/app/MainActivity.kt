@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -31,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.vidly.app.data.repository.DownloadRepository
 import com.vidly.app.data.repository.DownloadResult
+import com.vidly.app.ui.history.HistoryScreen
+import com.vidly.app.data.repository.HistoryRepository
 import com.vidly.app.ui.theme.VidlyTheme
 import kotlinx.coroutines.launch
 
@@ -55,6 +60,7 @@ class MainActivity : ComponentActivity() {
                 VidlyHome(
                     shareUrl = pendingUrl,
                     downloadRepository = DownloadRepository(),
+                    historyRepository = HistoryRepository(applicationContext),
                     appContext = applicationContext
                 )
             }
@@ -110,19 +116,35 @@ class MainActivity : ComponentActivity() {
 fun VidlyHome(
     shareUrl: String? = null,
     downloadRepository: DownloadRepository,
+    historyRepository: HistoryRepository,
     appContext: android.content.Context
 ) {
     val scope = rememberCoroutineScope()
     var url by rememberSaveable { mutableStateOf(shareUrl ?: "") }
     var status by rememberSaveable { mutableStateOf("Siap") }
     var loading by remember { mutableStateOf(false) }
+    var showHistory by remember { mutableStateOf(false) }
+
+    if (showHistory) {
+        HistoryScreen(historyRepository = historyRepository, downloadRepository = downloadRepository)
+        return
+    }
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
         Column(
             modifier = Modifier.fillMaxSize().padding(innerPadding).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(text = "Vidly")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "Vidly", style = MaterialTheme.typography.headlineMedium)
+                Button(onClick = { showHistory = true }) {
+                    Text("Riwayat")
+                }
+            }
             Text(text = "Unduh video dari URL yang dibagikan ke aplikasi.")
 
             OutlinedTextField(

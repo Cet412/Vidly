@@ -9,6 +9,8 @@ import android.provider.MediaStore
 import android.util.Log
 import com.vidly.app.BuildConfig
 import com.vidly.app.data.api.ApiClient
+import com.vidly.app.data.local.HistoryEntity
+import com.vidly.app.data.repository.HistoryRepository
 import com.vidly.app.notification.NotificationHelper
 import com.vidly.app.util.NetworkUtils
 import kotlinx.coroutines.Dispatchers
@@ -99,7 +101,7 @@ class DownloadRepository {
         DownloadResult.Failure(lastError)
     }
 
-    private fun fetch(context: Context, url: String, notif: NotificationHelper): DownloadResult {
+    private suspend fun fetch(context: Context, url: String, notif: NotificationHelper): DownloadResult {
         val endpoint = "${BuildConfig.API_BASE_URL.trimEnd('/')}/api/v1/download"
         val payload = JSONObject().put("url", url).toString()
         val request = Request.Builder()
@@ -166,6 +168,29 @@ class DownloadRepository {
             )
             Log.d(TAG, "selesai: $written byte -> $uri")
             notif.showCompletionNotification("Unduhan selesai!", displayName)
+            notif.cancelNotification()
+
+            // Simpan ke history DB
+            try {
+                HistoryRepository(context).insert(
+                    HistoryEntity(
+                        url = url,
+                        title = displayName,
+                        platform = when {
+    url.contains("instagram", ignoreCase = true) -> "Instagram"
+    url.contains("tiktok", ignoreCase = true) -> "TikTok"
+    url.contains("youtube", ignoreCase = true) || url.contains("youtu.be", ignoreCase = true) -> "YouTube"
+    else -> "Unknown"
+},
+                        filePath = uri.toString(),
+                        fileSize = written,
+                        mimeType = mimeType
+                    )
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "gagal simpan history", e)
+            }
+
             return DownloadResult.Success(uri, written)
         }
     }
@@ -215,5 +240,12 @@ class DownloadRepository {
 
     companion object {
         private const val TAG = "VidlyDownload"
+
+        fun extractPlatform(url: String): String = when {
+            url.contains("instagram", ignoreCase = true) -> "Instagram"
+            url.contains("tiktok", ignoreCase = true) -> "TikTok"
+            url.contains("youtube", ignoreCase = true) || url.contains("youtu.be", ignoreCase = true) -> "YouTube"
+            else -> "Unknown"
+        }
     }
 }

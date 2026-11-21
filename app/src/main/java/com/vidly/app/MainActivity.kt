@@ -36,6 +36,7 @@ import com.vidly.app.data.repository.DownloadRepository
 import com.vidly.app.data.repository.DownloadResult
 import com.vidly.app.ui.history.HistoryScreen
 import com.vidly.app.data.repository.HistoryRepository
+import com.vidly.app.service.DownloadService
 import com.vidly.app.ui.theme.VidlyTheme
 import kotlinx.coroutines.launch
 
@@ -53,8 +54,22 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         askNotificationPermission()
-        pendingUrl = resolveUrl(savedInstanceState ?: Bundle())
 
+        val shareUrl = intent?.takeIf { it.action == Intent.ACTION_SEND }
+            ?.getStringExtra(Intent.EXTRA_TEXT)?.trim()?.takeIf { it.isNotEmpty() }
+
+        if (shareUrl != null) {
+            // Auto-download di background, langsung close activity
+            val serviceIntent = Intent(this, DownloadService::class.java).apply {
+                putExtra(DownloadService.EXTRA_URL, shareUrl)
+            }
+            startService(serviceIntent)
+            finish()
+            return
+        }
+
+        // Normal flow: buka UI
+        pendingUrl = resolveUrl(savedInstanceState ?: Bundle())
         setContent {
             VidlyTheme {
                 VidlyHome(

@@ -11,6 +11,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -58,6 +61,7 @@ fun DownloadQueueInline(
             items(downloads, key = { it.id }) { item ->
                 DownloadQueueItemInline(
                     item = item,
+                    onPause = { downloadManager.pauseDownload(item.id) },
                     onRemove = { downloadManager.removeDownload(item.id) }
                 )
             }
@@ -68,6 +72,7 @@ fun DownloadQueueInline(
 @Composable
 fun DownloadQueueItemInline(
     item: com.vidly.app.data.model.DownloadItem,
+    onPause: () -> Unit = {},
     onRemove: () -> Unit
 ) {
     Card(
@@ -95,8 +100,24 @@ fun DownloadQueueItemInline(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                IconButton(onClick = onRemove, modifier = Modifier.padding(0.dp)) {
-                    Icon(Icons.Default.Delete, contentDescription = "Hapus", modifier = Modifier.padding(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (item.status == DownloadStatus.DOWNLOADING) {
+                        Button(onClick = onPause, modifier = Modifier.padding(0.dp)) {
+                            Text("Jeda", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    if (item.status == DownloadStatus.PAUSED) {
+                        Button(onClick = onPause, modifier = Modifier.padding(0.dp)) {
+                            Text("Lanjut", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    Button(
+                        onClick = onRemove,
+                        modifier = Modifier.padding(0.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Hapus", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
 
@@ -163,6 +184,7 @@ fun DownloadQueueSheet(
             items(downloads, key = { it.id }) { item ->
                 DownloadQueueItemInline(
                     item = item,
+                    onPause = { downloadManager.pauseDownload(item.id) },
                     onRemove = { downloadManager.removeDownload(item.id) }
                 )
             }

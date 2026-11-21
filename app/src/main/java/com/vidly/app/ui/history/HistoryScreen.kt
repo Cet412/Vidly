@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -78,12 +79,13 @@ fun HistoryScreen(
                 singleLine = true
             )
 
-            Row(
+            LazyRow(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp)
             ) {
                 val platforms = listOf("Semua", "Instagram", "TikTok", "YouTube")
-                for (platform in platforms) {
+                items(platforms) { platform ->
                     FilterChip(
                         onClick = { viewModel.onFilterChanged(platform) },
                         label = { Text(platform) },

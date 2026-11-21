@@ -21,13 +21,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.Alignment
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.runtime.rememberCoroutineScope
 import com.vidly.app.data.manager.DownloadManager
-import com.vidly.app.ui.download.DownloadQueueSheet
-import kotlinx.coroutines.launch
+import com.vidly.app.ui.download.DownloadQueueInline
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -134,7 +129,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VidlyHome(
     shareUrl: String? = null,
@@ -144,11 +138,8 @@ fun VidlyHome(
 ) {
     val scope = rememberCoroutineScope()
     var url by rememberSaveable { mutableStateOf(shareUrl ?: "") }
-    var status by rememberSaveable { mutableStateOf("Siap") }
     var loading by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
-    var showDownloadQueue by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState()
     val downloadManager = remember { DownloadManager.getInstance() }
 
     if (showHistory) {
@@ -188,18 +179,13 @@ fun VidlyHome(
             Button(
                 onClick = {
                     if (url.isBlank()) {
-                        status = "URL kosong"
                         return@Button
                     }
-                    showDownloadQueue = true
                     scope.launch {
                         loading = true
-                        status = "Mengunduh..."
                         when (val result = downloadRepository.downloadVideo(appContext, url.trim())) {
-                            is DownloadResult.Success ->
-                                status = "Selesai (${result.bytes / 1024} KB)\nDisimpan di Movies/Pictures/Vidly\n${result.uri}"
-                            is DownloadResult.Failure ->
-                                status = "Gagal: ${result.error.userMessage}"
+                            is DownloadResult.Success -> {}
+                            is DownloadResult.Failure -> {}
                         }
                         loading = false
                     }
@@ -210,41 +196,8 @@ fun VidlyHome(
                 if (loading) CircularProgressIndicator() else Text("Unduh")
             }
 
-            if (status.startsWith("Gagal")) {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            loading = true
-                            status = "Mengunduh..."
-                            when (val result = downloadRepository.downloadVideo(appContext, url.trim())) {
-                                is DownloadResult.Success ->
-                                    status = "Selesai (${result.bytes / 1024} KB)\nDisimpan di Movies/Pictures/Vidly\n${result.uri}"
-                                is DownloadResult.Failure ->
-                                    status = "Gagal: ${result.error.userMessage}"
-                            }
-                            loading = false
-                        }
-                    },
-                    enabled = !loading && url.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Coba Lagi")
-                }
-            }
-
-            Text(text = status)
-        }
-    }
-
-    if (showDownloadQueue) {
-        ModalBottomSheet(
-            onDismissRequest = { showDownloadQueue = false },
-            sheetState = sheetState
-        ) {
-            DownloadQueueSheet(
-                downloadManager = downloadManager,
-                onDismiss = { showDownloadQueue = false }
-            )
+            // Download queue (always visible, inline)
+            DownloadQueueInline(downloadManager = downloadManager)
         }
     }
 }

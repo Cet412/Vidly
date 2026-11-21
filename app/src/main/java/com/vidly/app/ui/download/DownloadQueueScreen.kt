@@ -31,6 +31,97 @@ import com.vidly.app.data.model.progressText
 import com.vidly.app.data.model.sizeText
 
 @Composable
+fun DownloadQueueInline(
+    downloadManager: DownloadManager = DownloadManager.getInstance()
+) {
+    val downloads by downloadManager.downloads.collectAsState()
+
+    if (downloads.isEmpty()) {
+        return
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp)
+    ) {
+        Text(
+            "Antrian Unduhan (${downloads.size})",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(downloads, key = { it.id }) { item ->
+                DownloadQueueItemInline(
+                    item = item,
+                    onRemove = { downloadManager.removeDownload(item.id) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun DownloadQueueItemInline(
+    item: com.vidly.app.data.model.DownloadItem,
+    onRemove: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = item.title.take(40),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "${item.progressText()} • ${item.sizeText()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = onRemove, modifier = Modifier.padding(0.dp)) {
+                    Icon(Icons.Default.Delete, contentDescription = "Hapus", modifier = Modifier.padding(4.dp))
+                }
+            }
+
+            if (item.status == DownloadStatus.DOWNLOADING) {
+                LinearProgressIndicator(
+                    progress = { item.progress / 100f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                )
+            }
+
+            if (item.errorMessage != null) {
+                Text(
+                    text = item.errorMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun DownloadQueueSheet(
     downloadManager: DownloadManager = DownloadManager.getInstance(),
     onDismiss: () -> Unit = {}
@@ -70,71 +161,9 @@ fun DownloadQueueSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(downloads, key = { it.id }) { item ->
-                DownloadQueueItem(
+                DownloadQueueItemInline(
                     item = item,
-                    onCancel = { downloadManager.cancelDownload(item.id) },
-                    onPause = { downloadManager.pauseDownload(item.id) },
                     onRemove = { downloadManager.removeDownload(item.id) }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun DownloadQueueItem(
-    item: com.vidly.app.data.model.DownloadItem,
-    onCancel: () -> Unit,
-    onPause: () -> Unit,
-    onRemove: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = item.title.take(40),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Text(
-                        text = "${item.progressText()} • ${item.sizeText()}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Row {
-                    IconButton(onClick = onRemove, modifier = Modifier.padding(0.dp)) {
-                        Icon(Icons.Default.Delete, contentDescription = "Hapus", modifier = Modifier.padding(4.dp))
-                    }
-                }
-            }
-
-            if (item.status == DownloadStatus.DOWNLOADING) {
-                LinearProgressIndicator(
-                    progress = { item.progress / 100f },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                )
-            }
-
-            if (item.errorMessage != null) {
-                Text(
-                    text = item.errorMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
         }

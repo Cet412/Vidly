@@ -41,11 +41,12 @@ class NotificationHelper(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val percent = if (max > 0) (progress * 100) / max else 0
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle(title)
-            .setContentText("$progress / $max KB")
+            .setContentText("$percent%")
             .setSmallIcon(R.drawable.ic_download)
-            .setProgress(max, progress, false)
+            .setProgress(100, percent, false)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()

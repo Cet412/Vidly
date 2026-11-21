@@ -141,7 +141,11 @@ fun VidlyHome(
     var showHistory by remember { mutableStateOf(false) }
 
     if (showHistory) {
-        HistoryScreen(historyRepository = historyRepository, downloadRepository = downloadRepository)
+        HistoryScreen(
+            historyRepository = historyRepository,
+            downloadRepository = downloadRepository,
+            onBack = { showHistory = false }
+        )
         return
     }
 

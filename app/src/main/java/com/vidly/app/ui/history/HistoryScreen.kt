@@ -9,31 +9,33 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -42,66 +44,78 @@ import androidx.compose.ui.unit.dp
 import com.vidly.app.data.local.HistoryEntity
 import com.vidly.app.data.repository.DownloadRepository
 import com.vidly.app.data.repository.HistoryRepository
-import kotlinx.coroutines.flow.Flow
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
     historyRepository: HistoryRepository,
-    downloadRepository: DownloadRepository
+    downloadRepository: DownloadRepository,
+    onBack: () -> Unit = {}
 ) {
     val viewModel = remember { HistoryViewModel(historyRepository) }
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Riwayat Unduhan", style = MaterialTheme.typography.headlineSmall)
-
-        OutlinedTextField(
-            value = state.searchQuery,
-            onValueChange = { viewModel.onSearchQueryChanged(it) },
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            label = { Text("Cari...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            singleLine = true
-        )
-
-Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            val platforms = listOf("Semua", "Instagram", "TikTok", "YouTube")
-            for (platform in platforms) {
-                FilterChip(
-                    onClick = { viewModel.onFilterChanged(platform) },
-                    label = { Text(platform) },
-                    selected = state.selectedPlatform == platform
-                )
-            }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Riwayat Unduhan") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Kembali")
+                    }
+                }
+            )
         }
+    ) { innerPadding ->
+        Column(modifier = Modifier.fillMaxSize().padding(innerPadding).padding(16.dp)) {
+            OutlinedTextField(
+                value = state.searchQuery,
+                onValueChange = { viewModel.onSearchQueryChanged(it) },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                label = { Text("Cari...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                singleLine = true
+            )
 
-        if (state.isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else if (state.items.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Belum ada riwayat unduhan")
-            }
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(state.items, key = { it.id }) { item ->
-                    HistoryItemCard(
-                        item = item,
-                        onDelete = { viewModel.requestDelete(item) },
-                        onOpen = {
-                            val uri = Uri.parse(item.filePath)
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                setDataAndType(uri, item.mimeType)
-                                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
-                            }
-                            context.startActivity(intent)
-                        }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val platforms = listOf("Semua", "Instagram", "TikTok", "YouTube")
+                for (platform in platforms) {
+                    FilterChip(
+                        onClick = { viewModel.onFilterChanged(platform) },
+                        label = { Text(platform) },
+                        selected = state.selectedPlatform == platform
                     )
+                }
+            }
+
+            if (state.isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else if (state.items.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Belum ada riwayat unduhan")
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(state.items, key = { it.id }) { item ->
+                        HistoryItemCard(
+                            item = item,
+                            onDelete = { viewModel.requestDelete(item) },
+                            onOpen = {
+                                val uri = Uri.parse(item.filePath)
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(uri, item.mimeType)
+                                    flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                context.startActivity(intent)
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -189,7 +203,7 @@ fun DeleteConfirmDialog(
     dontShowAgain: Boolean,
     onDontShowAgainChanged: (Boolean) -> Unit
 ) {
-    androidx.compose.material3.AlertDialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Hapus unduhan?") },
         text = {
@@ -199,21 +213,21 @@ fun DeleteConfirmDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(top = 8.dp)
                 ) {
-                    androidx.compose.material3.Checkbox(
+                    Checkbox(
                         checked = dontShowAgain,
                         onCheckedChange = onDontShowAgainChanged
                     )
-                    Text("Jangan tampilkan ini lagi")
+                    Text("Jangan tampilkan lagi")
                 }
             }
         },
         confirmButton = {
-            androidx.compose.material3.TextButton(onClick = onConfirm) {
+            TextButton(onClick = onConfirm) {
                 Text("Hapus")
             }
         },
         dismissButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss) {
                 Text("Batal")
             }
         }
